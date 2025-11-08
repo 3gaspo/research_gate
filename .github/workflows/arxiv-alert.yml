@@ -31,7 +31,7 @@ jobs:
           ARXIV_REQUIRED_KEYWORDS: ${{ secrets.ARXIV_REQUIRED_KEYWORDS }}
           ARXIV_ANY_KEYWORDS: ${{ secrets.ARXIV_ANY_KEYWORDS }}
           ARXIV_DAYS_BACK:  ${{ secrets.ARXIV_DAYS_BACK }}
-          ARXIV_MAX_RESULTS:${{ secrets.ARXIV_MAX_RESULTS }}
+          ARXIV_MAX_RESULTS: ${{ secrets.ARXIV_MAX_RESULTS }}
           DIGEST_MAX_ITEMS: ${{ secrets.DIGEST_MAX_ITEMS }}
           SHOW_ABSTRACT:    ${{ secrets.SHOW_ABSTRACT }}
           STATE_FILE: arxiv_state.json
