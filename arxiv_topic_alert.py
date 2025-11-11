@@ -128,22 +128,53 @@ def filter_by_keywords(entries, required_all=None, any_keywords=None):
 def dedupe(entries, seen):
     return [e for e in entries if e["id"] not in seen]
 
-def digest(entries, include_abs=True, max_items=50,
-           query=None, cats=None, required_all=None, any_keywords=None, cutoff=None):
-    """Format a human-readable digest and include info about search settings."""
+def digest(
+    entries,
+    include_abs=True,
+    max_items=50,
+    query=None,
+    cats=None,
+    required_all=None,
+    any_keywords=None,
+    cutoff=None,
+    counts=None,              # NEW: dict with step-by-step counts
+    delivery=None             # NEW: dict like {"email":"sent/skipped", "slack":"sent/skipped"}
+):
+    """Format a human-readable digest and include ALL search settings + diagnostics."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-
     lines = [f"arXiv topic digest — {now}", ""]
 
-    # --- Context / search summary (always print) ---
+    # --- ALWAYS print context ---
     lines.append(f"Query: {query or '(none)'}")
     lines.append(f"Categories: {', '.join(cats) if cats else '(none)'}")
     lines.append(f"Required ALL: {', '.join(required_all) if required_all else '(none)'}")
     lines.append(f"ANY keywords: {', '.join(any_keywords) if any_keywords else '(none)'}")
     lines.append(f"Cutoff (UTC): {cutoff.isoformat(timespec='seconds') if cutoff else '(none)'}")
-    lines.append("")
 
-    # --- Entries ---
+    # --- ALWAYS print diagnostics ---
+    if counts:
+        lines.append(
+            "Counts → "
+            f"fetched:{counts.get('fetched', 0)} | "
+            f"after_time:{counts.get('after_time', 0)} | "
+            f"after_keywords:{counts.get('after_kw', 0)} | "
+            f"after_dedupe:{counts.get('after_dedupe', 0)} | "
+            f"seen_ids:{counts.get('seen', 0)}"
+        )
+    else:
+        lines.append("Counts → fetched:0 | after_time:0 | after_keywords:0 | after_dedupe:0 | seen_ids:0")
+
+    # --- ALWAYS print delivery status ---
+    if delivery:
+        lines.append(
+            f"Delivery → email:{delivery.get('email','skipped')} | slack:{delivery.get('slack','skipped')}"
+        )
+    else:
+        lines.append("Delivery → email:skipped | slack:skipped")
+
+    lines.append("")  # blank line before entries
+
+    # --- Entries (or an explicit message) ---
     if not entries:
         lines.append("No new matching entries.")
         return "\n".join(lines)
@@ -154,16 +185,12 @@ def digest(entries, include_abs=True, max_items=50,
             lines.append(f"   {e['authors']}")
         lines.append(f"   {e['link'] or e['id']}")
         if include_abs and e["summary"]:
-            lines.append(
-                "   Abstract: " +
-                textwrap.shorten(e["summary"], width=600, placeholder=" …")
-            )
+            lines.append("   Abstract: " + textwrap.shorten(e["summary"], width=600, placeholder=" …"))
         lines.append("")
 
     if len(entries) > max_items:
         lines.append(f"(+{len(entries) - max_items} more)")
     return "\n".join(lines).strip()
-
 
 def send_email(subject, body):
     host=getenv("SMTP_HOST"); port=int(getenv("SMTP_PORT","587"))
@@ -197,28 +224,46 @@ def main():
     last = state.get("last_run_iso")
     cutoff = datetime.fromisoformat(last) if last else (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=int(getenv("ARXIV_DAYS_BACK","7"))))
 
-    # Defaults: required keywords = ["federated learning","time series"]
     required_all = csv("ARXIV_REQUIRED_KEYWORDS", "")
     any_keywords = csv("ARXIV_ANY_KEYWORDS", "")
 
     query = build_query()
     max_results = int(getenv("ARXIV_MAX_RESULTS","1000"))
-    print(f"Query: {query}")
+    
     xml = arxiv_fetch(query, max_results=max_results)
     entries_raw = parse_entries(xml)
-    print(f"Fetched from API: {len(entries_raw)}")
-    
     after_time = filter_by_time(entries_raw, cutoff)
-    print(f"After time filter: {len(after_time)} (cutoff >= {cutoff.isoformat(timespec='seconds')})")
-    
     after_kw = filter_by_keywords(after_time, required_all, any_keywords)
-    print(f"After keyword filter: {len(after_kw)} (ALL={required_all or 'none'}, ANY={any_keywords or 'none'})")
-    
     entries = dedupe(after_kw, seen)
-    print(f"After dedupe vs seen IDs: {len(entries)} (seen={len(seen)})")
+    
+        counts = {
+        "fetched": len(entries_raw),
+        "after_time": len(after_time),
+        "after_kw": len(after_kw),
+        "after_dedupe": len(entries),
+        "seen": len(seen),
+    }
 
+    # --- Decide delivery status WITHOUT sending yet (so the digest reflects reality) ---
+    # Email config check
+    smtp_host = getenv("SMTP_HOST")
+    smtp_from = getenv("SMTP_FROM", getenv("SMTP_USER") or "")
+    smtp_to   = csv("SMTP_TO")
+    smtp_configured = bool(smtp_host and smtp_from and smtp_to)
 
-    # Always build digest (even if empty)
+    # Slack config check
+    slack_configured = bool(getenv("SLACK_WEBHOOK_URL"))
+
+    if entries:
+        email_status = "will send" if smtp_configured else "skipped (SMTP not configured)"
+        slack_status = "will send" if slack_configured else "skipped (no webhook)"
+    else:
+        email_status = "skipped (0 entries)"
+        slack_status = "skipped (0 entries)"
+
+    delivery = {"email": email_status, "slack": slack_status}
+
+    # --- Build digest ALWAYS (header + counts + delivery + entries/none) ---
     body = digest(
         entries,
         include_abs=(getenv("SHOW_ABSTRACT", "1") == "1"),
@@ -227,28 +272,32 @@ def main():
         cats=csv("ARXIV_CATEGORIES", "cs.LG,cs.DC,stat.ML"),
         required_all=required_all,
         any_keywords=any_keywords,
-        cutoff=cutoff
+        cutoff=cutoff,
+        counts=counts,
+        delivery=delivery,
     )
-    
+
+    # Print digest to logs ALWAYS
     print("\n" + body + "\n")
-    
-    if entries:
+
+    # --- Actually send only if there are entries and the destination is configured ---
+    if entries and smtp_configured:
         try:
             send_email(f"[arXiv] {len(entries)} new item(s)", body)
         except Exception as e:
             print(f"Email error: {e}")
+    if entries and slack_configured:
         try:
             send_slack(body)
         except Exception as e:
             print(f"Slack error: {e}")
-    
-    # Always update state and exit normally
+
+    # --- Always update state and exit normally ---
     seen.update(e["id"] for e in entries)
     state["seen_ids"] = sorted(seen)
     state["last_run_iso"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
     save_state(state_file, state)
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
