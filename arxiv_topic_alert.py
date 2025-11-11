@@ -101,18 +101,47 @@ def filter_by_keywords(entries, required_all=None, any_keywords=None):
 def dedupe(entries, seen):
     return [e for e in entries if e["id"] not in seen]
 
-def digest(entries, include_abs=True, max_items=50):
+def digest(entries, include_abs=True, max_items=50,
+           query=None, cats=None, required_all=None, any_keywords=None, cutoff=None):
+    """Format a human-readable digest and include info about search settings."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    lines=[f"arXiv topic digest — {now}\n"]
-    for i,e in enumerate(entries[:max_items],1):
+
+    lines = [f"arXiv topic digest — {now}", ""]
+
+    # --- Context / search summary ---
+    if query:
+        lines.append(f"Query: {query}")
+    if cats:
+        lines.append(f"Categories: {', '.join(cats)}")
+    if required_all:
+        lines.append(f"Required ALL: {', '.join(required_all)}")
+    if any_keywords:
+        lines.append(f"ANY keywords: {', '.join(any_keywords)}")
+    if cutoff:
+        lines.append(f"Cutoff (UTC): {cutoff.isoformat(timespec='seconds')}")
+    lines.append("")
+
+    # --- Entries ---
+    if not entries:
+        lines.append("No new matching entries.")
+        return "\n".join(lines)
+
+    for i, e in enumerate(entries[:max_items], 1):
         lines.append(f"{i}. {e['title']} ({e['published'][:10]})")
-        if e["authors"]: lines.append(f"   {e['authors']}")
+        if e["authors"]:
+            lines.append(f"   {e['authors']}")
         lines.append(f"   {e['link'] or e['id']}")
         if include_abs and e["summary"]:
-            lines.append("   Abstract: "+textwrap.shorten(e["summary"], width=600, placeholder=" …"))
+            lines.append(
+                "   Abstract: " +
+                textwrap.shorten(e["summary"], width=600, placeholder=" …")
+            )
         lines.append("")
-    if len(entries)>max_items: lines.append(f"(+{len(entries)-max_items} more)")
+
+    if len(entries) > max_items:
+        lines.append(f"(+{len(entries) - max_items} more)")
     return "\n".join(lines).strip()
+
 
 def send_email(subject, body):
     host=getenv("SMTP_HOST"); port=int(getenv("SMTP_PORT","587"))
