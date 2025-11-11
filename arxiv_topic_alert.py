@@ -33,34 +33,23 @@ def rfc3339_to_naive_utc(s):
             return dt.astimezone(timezone.utc).replace(tzinfo=None)
         except Exception:
             return None
-
-
 def build_query():
-    # categories
+    """
+    Build a lightweight arXiv API query:
+    only restrict by categories, and do keyword filtering locally.
+    """
     cats = csv("ARXIV_CATEGORIES", "cs.LG,cs.DC,stat.ML")
     cats_expr = " OR ".join(f"cat:{c}" for c in cats) if cats else ""
 
-    # ANY keywords (default OR: federated learning / time series)
-    any_kw = csv("ARXIV_ANY_KEYWORDS", "federated learning,time series")
+    main = getenv("ARXIV_MAIN_QUERY")  # optional manual override
 
-    kw_terms = []
-    for k in any_kw:
-        kq = k.replace('"', '\\"')
-        # search in title OR abstract
-        kw_terms.append(f'ti:"{kq}"')
-        kw_terms.append(f'abs:"{kq}"')
-    kw_expr = "(" + " OR ".join(kw_terms) + ")" if kw_terms else ""
+    if main:
+        return main
+    elif cats_expr:
+        return f"({cats_expr})"
+    else:
+        return 'all:"*"'
 
-    # Optional manual override (advanced users)
-    main = getenv("ARXIV_MAIN_QUERY")  # if set, you can still combine below
-
-    # Combine
-    parts = []
-    if cats_expr: parts.append(f"({cats_expr})")
-    if kw_expr:   parts.append(kw_expr)
-    if main:      parts.append(f"({main})")
-
-    return " AND ".join(parts) if parts else 'all:"*"'
 
 
 def http_get(url, headers=None, timeout=45):
