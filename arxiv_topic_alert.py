@@ -183,12 +183,7 @@ def main():
     entries = filter_by_keywords(entries, required_all, any_keywords)
     entries = dedupe(entries, seen)
 
-    if not entries:
-        print("No new matching entries.")
-        state["last_run_iso"] = datetime.utcnow().isoformat(timespec="seconds")
-        save_state(state_file, state)
-        return 0
-
+    # Always build digest (even if empty)
     body = digest(
         entries,
         include_abs=(getenv("SHOW_ABSTRACT", "1") == "1"),
@@ -199,18 +194,26 @@ def main():
         any_keywords=any_keywords,
         cutoff=cutoff
     )
-
-    print("\n"+body+"\n")
-    try: send_email(f"[arXiv] {len(entries)} new item(s)", body)
-    except Exception as e: print(f"Email error: {e}")
-    try: send_slack(body)
-    except Exception as e: print(f"Slack error: {e}")
-
+    
+    print("\n" + body + "\n")
+    
+    if entries:
+        try:
+            send_email(f"[arXiv] {len(entries)} new item(s)", body)
+        except Exception as e:
+            print(f"Email error: {e}")
+        try:
+            send_slack(body)
+        except Exception as e:
+            print(f"Slack error: {e}")
+    
+    # Always update state and exit normally
     seen.update(e["id"] for e in entries)
     state["seen_ids"] = sorted(seen)
     state["last_run_iso"] = datetime.utcnow().isoformat(timespec="seconds")
     save_state(state_file, state)
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
