@@ -33,11 +33,32 @@ def rfc3339_to_naive_utc(s):
 
 
 def build_query():
+    # categories
     cats = csv("ARXIV_CATEGORIES", "cs.LG,cs.DC,stat.ML")
     cats_expr = " OR ".join(f"cat:{c}" for c in cats) if cats else ""
-    main = getenv("ARXIV_MAIN_QUERY")  # optional exact arXiv query
-    if cats_expr and main: return f"({cats_expr}) AND {main}"
-    return main or cats_expr or 'all:"*"'  # fallback: everything (not recommended)
+
+    # ANY keywords (default OR: federated learning / time series)
+    any_kw = csv("ARXIV_ANY_KEYWORDS", "federated learning,time series")
+
+    kw_terms = []
+    for k in any_kw:
+        kq = k.replace('"', '\\"')
+        # search in title OR abstract
+        kw_terms.append(f'ti:"{kq}"')
+        kw_terms.append(f'abs:"{kq}"')
+    kw_expr = "(" + " OR ".join(kw_terms) + ")" if kw_terms else ""
+
+    # Optional manual override (advanced users)
+    main = getenv("ARXIV_MAIN_QUERY")  # if set, you can still combine below
+
+    # Combine
+    parts = []
+    if cats_expr: parts.append(f"({cats_expr})")
+    if kw_expr:   parts.append(kw_expr)
+    if main:      parts.append(f"({main})")
+
+    return " AND ".join(parts) if parts else 'all:"*"'
+
 
 def http_get(url, headers=None, timeout=30):
     req = urllib.request.Request(url, headers=headers or {"User-Agent":"arxiv-topic-alert/1.0"})
@@ -45,10 +66,16 @@ def http_get(url, headers=None, timeout=30):
         return r.read().decode("utf-8", "replace")
 
 def arxiv_fetch(search_query, max_results=200):
-    params = dict(search_query=search_query, start=0, max_results=max_results,
-                  sortBy="submittedDate", sortOrder="descending")
+    params = dict(
+        search_query=search_query,
+        start=0,
+        max_results=max_results,
+        sortBy="lastUpdatedDate",   # was "submittedDate"
+        sortOrder="descending",
+    )
     url = ARXIV_API + "?" + urllib.parse.urlencode(params)
     return http_get(url)
+
 
 def parse_entries(atom_xml):
     ns = {"a":"http://www.w3.org/2005/Atom"}
@@ -168,20 +195,28 @@ def main():
     state = load_state(state_file)
     seen = set(state.get("seen_ids", []))
     last = state.get("last_run_iso")
-    cutoff = datetime.fromisoformat(last) if last else (datetime.utcnow() - timedelta(days=int(getenv("ARXIV_DAYS_BACK","7"))))
+    cutoff = datetime.fromisoformat(last) if last else (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=int(getenv("ARXIV_DAYS_BACK","7"))))
 
     # Defaults: required keywords = ["federated learning","time series"]
     required_all = csv("ARXIV_REQUIRED_KEYWORDS", "")
     any_keywords = csv("ARXIV_ANY_KEYWORDS", "")
 
     query = build_query()
-    max_results = int(getenv("ARXIV_MAX_RESULTS","200"))
+    max_results = int(getenv("ARXIV_MAX_RESULTS","1000"))
     print(f"Query: {query}")
     xml = arxiv_fetch(query, max_results=max_results)
-    entries = parse_entries(xml)
-    entries = filter_by_time(entries, cutoff)
-    entries = filter_by_keywords(entries, required_all, any_keywords)
-    entries = dedupe(entries, seen)
+    entries_raw = parse_entries(xml)
+    print(f"Fetched from API: {len(entries_raw)}")
+    
+    after_time = filter_by_time(entries_raw, cutoff)
+    print(f"After time filter: {len(after_time)} (cutoff >= {cutoff.isoformat(timespec='seconds')})")
+    
+    after_kw = filter_by_keywords(after_time, required_all, any_keywords)
+    print(f"After keyword filter: {len(after_kw)} (ALL={required_all or 'none'}, ANY={any_keywords or 'none'})")
+    
+    entries = dedupe(after_kw, seen)
+    print(f"After dedupe vs seen IDs: {len(entries)} (seen={len(seen)})")
+
 
     # Always build digest (even if empty)
     body = digest(
@@ -210,7 +245,7 @@ def main():
     # Always update state and exit normally
     seen.update(e["id"] for e in entries)
     state["seen_ids"] = sorted(seen)
-    state["last_run_iso"] = datetime.utcnow().isoformat(timespec="seconds")
+    state["last_run_iso"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
     save_state(state_file, state)
     return 0
 
