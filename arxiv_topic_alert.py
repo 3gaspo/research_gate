@@ -138,12 +138,33 @@ def filter_by_time(entries, cutoff):
         if t and t >= cutoff: out.append(e)
     return out
 
+def _normalize_keywords(keywords):
+    """Return a list of lower-cased keyword tokens, filtering out blanks/None."""
+    if not keywords:
+        return []
+    if isinstance(keywords, str):
+        keywords = [keywords]
+
+    normalized = []
+    for kw in keywords:
+        if kw is None:
+            continue
+        kw_str = str(kw).strip()
+        if kw_str:
+            normalized.append(kw_str.lower())
+    return normalized
+
+
 def filter_by_keywords(entries, required_all=None, any_keywords=None):
-    R = [s.lower() for s in required_all]
-    A = [s.lower() for s in any_keywords]
+    if not entries:
+        return []
+
+    R = _normalize_keywords(required_all)
+    A = _normalize_keywords(any_keywords)
+
     out=[]
     for e in entries:
-        hay = (e["title"]+" "+e["summary"]).lower()
+        hay = f"{e.get('title', '')} {e.get('summary', '')}".lower()
         if R and not all(tok in hay for tok in R): continue
         if A and not any(tok in hay for tok in A): continue
         out.append(e)
