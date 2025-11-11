@@ -75,9 +75,12 @@ def filter_by_time(entries, cutoff):
         if t and t >= cutoff: out.append(e)
     return out
 
-def filter_by_keywords(entries, required_all, any_keywords):
-    R = [s.lower() for s in required_all]
-    A = [s.lower() for s in any_keywords]
+def filter_by_keywords(entries, required_all=None, any_keywords=None):
+    R, A = [], []
+    if required_all is not None:
+        R = [s.lower() for s in required_all]
+    if any_keywords is not None:
+        A = [s.lower() for s in any_keywords]
     out=[]
     for e in entries:
         hay = (e["title"]+" "+e["summary"]).lower()
@@ -135,8 +138,8 @@ def main():
     cutoff = datetime.fromisoformat(last) if last else (datetime.utcnow() - timedelta(days=int(getenv("ARXIV_DAYS_BACK","7"))))
 
     # Defaults: required keywords = ["federated learning","time series"]
-    required_all = csv("ARXIV_REQUIRED_KEYWORDS", "federated learning,time series")
-    any_keywords = csv("ARXIV_ANY_KEYWORDS", "")
+    required_all = csv("ARXIV_REQUIRED_KEYWORDS"), None)
+    any_keywords = csv("ARXIV_ANY_KEYWORDS", None)
 
     query = build_query()
     max_results = int(getenv("ARXIV_MAX_RESULTS","200"))
