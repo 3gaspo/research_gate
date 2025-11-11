@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # Standard-library only. Alerts on new arXiv papers for your keywords.
 
+from urllib.error import HTTPError, URLError
+import socket
 import os, json, textwrap, ssl, smtplib, email.utils
 import urllib.parse, urllib.request, xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -61,10 +63,42 @@ def build_query():
     return " AND ".join(parts) if parts else 'all:"*"'
 
 
-def http_get(url, headers=None, timeout=30):
-    req = urllib.request.Request(url, headers=headers or {"User-Agent":"arxiv-topic-alert/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", "replace")
+def http_get(url, headers=None, timeout=45):
+    """HTTP GET with polite retries/backoff; handles 429/5xx and timeouts."""
+    hdrs = headers or {"User-Agent": "arxiv-topic-alert/1.0 (+github-actions)"}
+    max_retries = 5
+    base_backoff = 3  # seconds
+
+    for attempt in range(max_retries):
+        try:
+            req = urllib.request.Request(url, headers=hdrs)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read().decode("utf-8", "replace")
+
+        except HTTPError as e:
+            # Retry on rate limits / transient server errors
+            if e.code in (429, 500, 502, 503, 504):
+                retry_after = 0
+                try:
+                    retry_after = int(e.headers.get("Retry-After", "0") or 0)
+                except Exception:
+                    pass
+                sleep_s = max(retry_after, base_backoff * (2 ** attempt) + random.uniform(0, 1))
+                print(f"HTTP {e.code} from arXiv; retrying in {sleep_s:.1f}s ({attempt+1}/{max_retries})")
+                time.sleep(sleep_s)
+                continue
+            # Non-retriable
+            raise
+
+        except (URLError, TimeoutError, socket.timeout) as e:
+            sleep_s = base_backoff * (2 ** attempt) + random.uniform(0, 1)
+            print(f"Network timeout/error '{e}'; retrying in {sleep_s:.1f}s ({attempt+1}/{max_retries})")
+            time.sleep(sleep_s)
+            continue
+
+    print("ERROR: arXiv fetch failed after retries; continuing with empty feed.")
+    return "<feed xmlns='http://www.w3.org/2005/Atom'></feed>"
+
 
 def arxiv_fetch(search_query, max_results=200):
     params = dict(
