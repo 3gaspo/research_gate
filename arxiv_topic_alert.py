@@ -147,7 +147,7 @@ def main():
     cutoff = datetime.fromisoformat(last) if last else (datetime.utcnow() - timedelta(days=int(getenv("ARXIV_DAYS_BACK","7"))))
 
     # Defaults: required keywords = ["federated learning","time series"]
-    required_all = csv("ARXIV_REQUIRED_KEYWORDS"), "")
+    required_all = csv("ARXIV_REQUIRED_KEYWORDS", "")
     any_keywords = csv("ARXIV_ANY_KEYWORDS", "")
 
     query = build_query()
