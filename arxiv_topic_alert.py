@@ -236,7 +236,7 @@ def main():
     after_kw = filter_by_keywords(after_time, required_all, any_keywords)
     entries = dedupe(after_kw, seen)
     
-        counts = {
+    counts = {
         "fetched": len(entries_raw),
         "after_time": len(after_time),
         "after_kw": len(after_kw),
