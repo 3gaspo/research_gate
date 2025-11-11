@@ -46,7 +46,7 @@ jobs:
           ARXIV_CATEGORIES: ${{ inputs.categories != '' && inputs.categories || 'cs.LG,stat.ML,cs.AI,cs.CL,cs.CV' }}
           ARXIV_KEYWORDS:   ${{ inputs.keywords   != '' && inputs.keywords   || 'federated learning,time series' }}
           ARXIV_DAYS:       ${{ inputs.days       != '' && inputs.days       || '7' }}
-          INCLUDE_ABSTRACTS:${{ inputs.include_abstracts != '' && inputs.include_abstracts || 'false' }}
+          INCLUDE_ABSTRACTS: ${{ inputs.include_abstracts != '' && inputs.include_abstracts || 'false' }}
           MAX_RESULTS:      ${{ inputs.max_results != '' && inputs.max_results || '200' }}
         run: |
           python scripts/arxiv_weekly.py > results.txt
