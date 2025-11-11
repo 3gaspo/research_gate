@@ -101,23 +101,19 @@ def filter_by_keywords(entries, required_all=None, any_keywords=None):
 def dedupe(entries, seen):
     return [e for e in entries if e["id"] not in seen]
 
-def digest(entries, include_abs=True, max_items=50, query=None, cats=None, required_all=None, any_keywords=None, cutoff=None):
+def digest(entries, include_abs=True, max_items=50,
+           query=None, cats=None, required_all=None, any_keywords=None, cutoff=None):
     """Format a human-readable digest and include info about search settings."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     lines = [f"arXiv topic digest — {now}", ""]
 
-    # --- Context / search summary ---
-    if query:
-        lines.append(f"Query: {query}")
-    if cats:
-        lines.append(f"Categories: {', '.join(cats)}")
-    if required_all:
-        lines.append(f"Required ALL: {', '.join(required_all)}")
-    if any_keywords:
-        lines.append(f"ANY keywords: {', '.join(any_keywords)}")
-    if cutoff:
-        lines.append(f"Cutoff (UTC): {cutoff.isoformat(timespec='seconds')}")
+    # --- Context / search summary (always print) ---
+    lines.append(f"Query: {query or '(none)'}")
+    lines.append(f"Categories: {', '.join(cats) if cats else '(none)'}")
+    lines.append(f"Required ALL: {', '.join(required_all) if required_all else '(none)'}")
+    lines.append(f"ANY keywords: {', '.join(any_keywords) if any_keywords else '(none)'}")
+    lines.append(f"Cutoff (UTC): {cutoff.isoformat(timespec='seconds') if cutoff else '(none)'}")
     lines.append("")
 
     # --- Entries ---
