@@ -4,6 +4,7 @@
 import os, json, textwrap, ssl, smtplib, email.utils
 import urllib.parse, urllib.request, xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+import time, random
 
 ARXIV_API = "https://export.arxiv.org/api/query"
 
@@ -228,8 +229,9 @@ def main():
     any_keywords = csv("ARXIV_ANY_KEYWORDS", "")
 
     query = build_query()
-    max_results = int(getenv("ARXIV_MAX_RESULTS","1000"))
-    
+    max_results = int(getenv("ARXIV_MAX_RESULTS","200"))
+
+    time.sleep(random.uniform(3, 9))
     xml = arxiv_fetch(query, max_results=max_results)
     entries_raw = parse_entries(xml)
     after_time = filter_by_time(entries_raw, cutoff)
