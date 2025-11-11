@@ -16,9 +16,21 @@ def csv(name, default=""):
     return [x.strip() for x in s.split(",") if x.strip()]
 
 def rfc3339_to_naive_utc(s):
-    if not s: return None
-    dt = email.utils.parsedate_to_datetime(s)
-    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    """Parse arXiv timestamps like 2025-11-10T18:59:53Z into naive UTC datetimes."""
+    if not s:
+        return None
+    try:
+        # Modern ISO 8601 parsing (Python 3.11+)
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    except Exception:
+        try:
+            # Fallback for older email-style dates
+            dt = email.utils.parsedate_to_datetime(s)
+            return dt.astimezone(timezone.utc).replace(tzinfo=None)
+        except Exception:
+            return None
+
 
 def build_query():
     cats = csv("ARXIV_CATEGORIES", "cs.LG,cs.DC,stat.ML")
