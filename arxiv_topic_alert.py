@@ -101,8 +101,7 @@ def filter_by_keywords(entries, required_all=None, any_keywords=None):
 def dedupe(entries, seen):
     return [e for e in entries if e["id"] not in seen]
 
-def digest(entries, include_abs=True, max_items=50,
-           query=None, cats=None, required_all=None, any_keywords=None, cutoff=None):
+def digest(entries, include_abs=True, max_items=50, query=None, cats=None, required_all=None, any_keywords=None, cutoff=None):
     """Format a human-readable digest and include info about search settings."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -194,8 +193,17 @@ def main():
         save_state(state_file, state)
         return 0
 
-    body = digest(entries, include_abs=(getenv("SHOW_ABSTRACT","1")=="1"),
-                  max_items=int(getenv("DIGEST_MAX_ITEMS","50")))
+    body = digest(
+        entries,
+        include_abs=(getenv("SHOW_ABSTRACT", "1") == "1"),
+        max_items=int(getenv("DIGEST_MAX_ITEMS", "50")),
+        query=query,
+        cats=csv("ARXIV_CATEGORIES", "cs.LG,cs.DC,stat.ML"),
+        required_all=required_all,
+        any_keywords=any_keywords,
+        cutoff=cutoff
+    )
+
     print("\n"+body+"\n")
     try: send_email(f"[arXiv] {len(entries)} new item(s)", body)
     except Exception as e: print(f"Email error: {e}")
