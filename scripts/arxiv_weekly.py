@@ -54,11 +54,14 @@ def main():
         sort_order=arxiv.SortOrder.Descending,
     )
 
-    client = arxiv.Client(
-        page_size=page_size,
-        delay=delay,          # respects arXiv’s “~1 request per 3s”
-        num_retries=retries,  # simple retry on transient failures
-    )
+
+    try:
+        # For arxiv>=2.1.0
+        client = arxiv.Client(page_size=page_size, delay=delay, num_retries=retries)
+    except TypeError:
+        # For older arxiv versions that don’t support delay
+        client = arxiv.Client(page_size=page_size, num_retries=retries)
+
 
     matches = []
     for result in client.results(search):
