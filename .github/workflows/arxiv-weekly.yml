@@ -2,25 +2,33 @@ name: arXiv Weekly Digest
 
 on:
   schedule:
-    # Runs every Monday at 07:00 UTC (≈ Monday morning in Europe/Paris).
-    # Adjust if you want a different time.
+    # Runs every Monday at 07:00 UTC (≈ Monday morning in Europe/Paris)
     - cron: "0 7 * * 1"
   workflow_dispatch:
     inputs:
       categories:
-        description: "Comma-separated arXiv categories"
+        description: "Comma-separated arXiv categories (default: cs.LG,stat.ML,cs.AI)"
         required: false
       keywords:
-        description: "Comma-separated keywords"
+        description: "Comma-separated keywords (default: federated learning,time series)"
         required: false
       days:
-        description: "Lookback window in days"
+        description: "Lookback window in days (default: 7)"
         required: false
       include_abstracts:
         description: "Include 1-line abstract snippets (true/false)"
         required: false
       max_results:
-        description: "Max results fetched before filtering"
+        description: "Max results before filtering (default: 150)"
+        required: false
+      delay:
+        description: "Delay between API calls in seconds (default: 3.2)"
+        required: false
+      page_size:
+        description: "Page size for arXiv client (default: 100)"
+        required: false
+      retries:
+        description: "Retry count for transient errors (default: 4)"
         required: false
 
 jobs:
@@ -43,14 +51,17 @@ jobs:
       - name: Run arXiv search
         env:
           # Defaults (can be overridden via workflow_dispatch inputs)
-          ARXIV_CATEGORIES: ${{ inputs.categories != '' && inputs.categories || 'cs.LG,stat.ML,cs.AI,cs.CL,cs.CV' }}
-          ARXIV_KEYWORDS:   ${{ inputs.keywords   != '' && inputs.keywords   || 'federated learning,time series' }}
-          ARXIV_DAYS:       ${{ inputs.days       != '' && inputs.days       || '7' }}
+          ARXIV_CATEGORIES:  ${{ inputs.categories != '' && inputs.categories || 'cs.LG,stat.ML,cs.AI' }}
+          ARXIV_KEYWORDS:    ${{ inputs.keywords   != '' && inputs.keywords   || 'federated learning,time series' }}
+          ARXIV_DAYS:        ${{ inputs.days       != '' && inputs.days       || '7' }}
           INCLUDE_ABSTRACTS: ${{ inputs.include_abstracts != '' && inputs.include_abstracts || 'false' }}
-          MAX_RESULTS:      ${{ inputs.max_results != '' && inputs.max_results || '200' }}
+          MAX_RESULTS:       ${{ inputs.max_results != '' && inputs.max_results || '150' }}
+          ARXIV_DELAY:       ${{ inputs.delay != '' && inputs.delay || '3.2' }}
+          ARXIV_PAGE_SIZE:   ${{ inputs.page_size != '' && inputs.page_size || '100' }}
+          ARXIV_RETRIES:     ${{ inputs.retries != '' && inputs.retries || '4' }}
         run: |
           python scripts/arxiv_weekly.py > results.txt
-          echo "Preview:"
+          echo "Preview of results:"
           head -n 40 results.txt || true
 
       - name: Capture email body from file
@@ -73,5 +84,4 @@ jobs:
           to: ${{ secrets.TO_EMAIL }}
           from: ${{ secrets.FROM_EMAIL }}
           body: ${{ steps.getbody.outputs.body }}
-          # Optional: also attach the txt file
           attachments: results.txt
