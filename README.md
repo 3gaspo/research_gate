@@ -46,7 +46,7 @@ Edit `.github/workflows/arxiv-weekly.yml` to change defaults:
 ---
 
 ### 5. Schedule  
-Runs **every Monday at 07:00 UTC** (default).  
+Runs **every morning at 07:00 UTC** (default).  
 Adjust the `cron:` line in the workflow to change timing.
 
 ---
