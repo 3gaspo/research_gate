@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# semanticscholar_digest.py
 import os, sys, time, textwrap, random
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -10,14 +11,14 @@ except ImportError:
     sys.exit(1)
 
 
+# ---------------------------- helpers ----------------------------
+
 def getenv_list(name: str, default: List[str]) -> List[str]:
     raw = os.getenv(name, "")
     return [s.strip() for s in raw.split(",") if s.strip()] if raw.strip() else default
 
-
 def normalize_kw_list(keywords: List[str]) -> List[str]:
     return [k.strip().lower() for k in keywords if k.strip()]
-
 
 def text_has_keywords(text: str, keywords: List[str], intersect: bool) -> bool:
     t = (text or "").lower()
@@ -25,36 +26,44 @@ def text_has_keywords(text: str, keywords: List[str], intersect: bool) -> bool:
         return True
     return all(kw in t for kw in keywords) if intersect else any(kw in t for kw in keywords)
 
-
 def build_free_text_query(keywords: List[str], fields_of_study: List[str]) -> str:
-    parts = []
-    for kw in keywords:
-        parts.append(f'"{kw}"' if " " in kw else kw)
+    # Quote multi-word phrases; join with OR for recall. FOS tokens nudge relevance.
+    parts = [(f'"{kw}"' if " " in kw else kw) for kw in keywords]
     if fields_of_study:
         parts += fields_of_study
     return " OR ".join(parts) if parts else "machine learning"
 
+def _parse_pubdate_utc(s: str) -> Optional[datetime]:
+    # Accept "YYYY-MM-DD" or ISO with/without 'Z'
+    try:
+        s2 = s.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s2)
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 def _request_with_backoff(url: str, headers: dict, params: dict, max_retries: int, base_sleep: float):
-    """GET with exponential backoff that respects Retry-After on 429."""
+    """GET with exponential backoff, honoring Retry-After on 429."""
     attempt = 0
     while True:
         resp = requests.get(url, headers=headers, params=params, timeout=30)
         if resp.status_code != 429:
             resp.raise_for_status()
             return resp
-        # 429: rate limited
         attempt += 1
         if attempt > max_retries:
-            resp.raise_for_status()  # will raise HTTPError 429
+            resp.raise_for_status()
         retry_after = resp.headers.get("Retry-After")
         if retry_after and retry_after.isdigit():
             sleep_s = int(retry_after)
         else:
-            # exponential backoff with jitter
             sleep_s = base_sleep * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
         time.sleep(sleep_s)
 
+
+# ---------------------------- core search ----------------------------
 
 def fetch_semantic_scholar(
     keywords: List[str],
@@ -78,17 +87,15 @@ def fetch_semantic_scholar(
 
     results = []
     offset = 0
-    remaining = max_results
     current_page_size = max(10, min(page_size, 100))
 
-    while remaining > 0:
-        limit = min(current_page_size, remaining)
+    while len(results) < max_results:
+        limit = min(current_page_size, max_results - len(results))
         params = {"query": query, "fields": fields, "limit": str(limit), "offset": str(offset)}
 
         try:
             r = _request_with_backoff(base, headers, params, max_retries=max_retries, base_sleep=base_sleep)
         except requests.HTTPError as e:
-            # If we still get 429 after retries, halve the page size and try once more loop iteration
             if e.response is not None and e.response.status_code == 429 and current_page_size > 10:
                 current_page_size = max(10, current_page_size // 2)
                 continue
@@ -98,40 +105,45 @@ def fetch_semantic_scholar(
         if not data:
             break
 
-        added = 0
         for p in data:
+            # ---- strict date filter ----
             pubdate = p.get("publicationDate")
             year = p.get("year")
             keep = False
             if pubdate:
-                try:
-                    dt = datetime.fromisoformat(pubdate.replace("Z", "+00:00"))
-                    keep = dt >= since_dt
-                except Exception:
-                    keep = True
+                dt = _parse_pubdate_utc(pubdate)
+                keep = (dt is not None) and (dt.date() >= since_dt.date())
             elif year:
-                keep = int(year) >= since_dt.year
+                # coarse fallback if only year is known
+                try:
+                    keep = int(year) >= since_dt.year
+                except Exception:
+                    keep = False
             else:
-                keep = True
+                keep = False
             if not keep:
                 continue
 
             title = (p.get("title") or "").strip()
             abstract = p.get("abstract") or ""
-            title_ok = text_has_keywords(title, keywords, intersect)
-            abstract_ok = text_has_keywords(abstract, keywords, intersect)
-            if not (title_ok or abstract_ok):
+            # keyword logic: match if either title OR abstract satisfies intersect flag
+            if not (text_has_keywords(title, keywords, intersect) or
+                    text_has_keywords(abstract, keywords, intersect)):
                 continue
 
             fos = p.get("fieldsOfStudy") or []
             if fields_of_study:
-                if not any(fs.lower() in [f.lower() for f in fos] for fs in fields_of_study):
+                lf = [f.lower() for f in fos]
+                if not any(fs.lower() in lf for fs in fields_of_study):
                     continue
 
             url = p.get("url") or ""
             ext = p.get("externalIds") or {}
             if not url and "ArXiv" in ext:
                 url = f"https://arxiv.org/abs/{ext['ArXiv']}"
+
+            # Clean date string for output
+            date_str = pubdate.split("T")[0] if pubdate else (str(year) if year else "N/A")
 
             snippet = ""
             if os.getenv("INCLUDE_ABSTRACTS", "false").lower() == "true" and abstract:
@@ -141,25 +153,22 @@ def fetch_semantic_scholar(
             results.append({
                 "title": title,
                 "url": url,
-                "date": pubdate or (str(year) if year else "N/A"),
+                "date": date_str,
                 "cat": ", ".join(fos) if fos else "N/A",
                 "snippet": snippet,
             })
-            added += 1
+
             if len(results) >= max_results:
                 break
 
-        if added == 0 and len(data) == 0:
-            break
-
         offset += len(data)
-        remaining = max_results - len(results)
-
         if delay:
             time.sleep(delay)
 
     return results
 
+
+# ---------------------------- CLI ----------------------------
 
 def main():
     default_keywords = ["federated learning", "time series"]
@@ -168,12 +177,13 @@ def main():
     keywords = normalize_kw_list(getenv_list("S2_KEYWORDS", default_keywords))
     intersect = os.getenv("S2_INTERSECT_KW", "false").lower() == "true"
     days = int(os.getenv("S2_DAYS", "3"))
-    # Safer defaults to avoid 429s:
+
+    # Safer defaults to avoid 429s
     max_results = int(os.getenv("S2_MAX_RESULTS", "100"))
     page_size = int(os.getenv("S2_PAGE_SIZE", "50"))
     delay = float(os.getenv("S2_DELAY", "1.5"))
-    fields_of_study = getenv_list("S2_FIELDS", default_fos)
 
+    fields_of_study = getenv_list("S2_FIELDS", default_fos)
     include_abstracts = os.getenv("INCLUDE_ABSTRACTS", "false").lower() == "true"
     api_key = os.getenv("S2_API_KEY", "").strip() or None
 
