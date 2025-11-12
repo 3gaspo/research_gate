@@ -1,6 +1,6 @@
-# 📨 ArXiv daily digest
+# 📨 ArXiv / Semantic Scholar daily digests
 
-Automatically fetch and email the latest arXiv submissions in a specified field.
+Automatically fetch and email the latest arXiv submissions / semantic scholar entries in a specified field.
 
 ---
 
@@ -25,7 +25,7 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 
 ---
 
-### 3. Run it  
+### 3. Run workflow
 Go to **Actions → arXiv Weekly Digest → Run workflow**  
 You’ll receive an email with recent papers shortly after.
 
