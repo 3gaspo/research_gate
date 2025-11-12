@@ -50,7 +50,7 @@ def main():
 
     since = datetime.now(timezone.utc) - timedelta(days=days)
 
-    query = build_query(categories, [k.lower() for k in keywords]; intersect_keywords)
+    query = build_query(categories, [k.lower() for k in keywords], intersect_keywords)
 
     search = arxiv.Search(
         query=query,
