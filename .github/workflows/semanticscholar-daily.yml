@@ -18,13 +18,13 @@ on:
         description: "AND condition across keywords (true/false)"
         required: false
       max_results:
-        description: "Max results to fetch (default: 200)"
+        description: "Max results to fetch (default: 100)"
         required: false
       page_size:
-        description: "Page size (default: 100)"
+        description: "Page size (default: 50)"
         required: false
       delay:
-        description: "Delay between API calls (s) (default: 1.0)"
+        description: "Delay between API calls in seconds (default: 1.5)"
         required: false
       fields_of_study:
         description: "Comma-separated fields (e.g., Computer Science,Mathematics)"
@@ -42,7 +42,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests
@@ -53,11 +53,11 @@ jobs:
           S2_DAYS:            ${{ inputs.days != '' && inputs.days || '3' }}
           INCLUDE_ABSTRACTS:  ${{ inputs.include_abstracts != '' && inputs.include_abstracts || 'false' }}
           S2_INTERSECT_KW:    ${{ inputs.intersect_keywords != '' && inputs.intersect_keywords || 'false' }}
-          S2_MAX_RESULTS:     ${{ inputs.max_results != '' && inputs.max_results || '200' }}
-          S2_PAGE_SIZE:       ${{ inputs.page_size != '' && inputs.page_size || '100' }}
-          S2_DELAY:           ${{ inputs.delay != '' && inputs.delay || '1.0' }}
+          S2_MAX_RESULTS:     ${{ inputs.max_results != '' && inputs.max_results || '100' }}
+          S2_PAGE_SIZE:       ${{ inputs.page_size != '' && inputs.page_size || '50' }}
+          S2_DELAY:           ${{ inputs.delay != '' && inputs.delay || '1.5' }}
           S2_FIELDS:          ${{ inputs.fields_of_study != '' && inputs.fields_of_study || '' }}
-          # Optional API key (secret). Not required for basic usage.
+          # Optional API key (secret). Not required but helps raise rate limits.
           S2_API_KEY:         ${{ secrets.S2_API_KEY }}
         run: |
           python scripts/semanticscholar_digest.py > results_s2.txt
