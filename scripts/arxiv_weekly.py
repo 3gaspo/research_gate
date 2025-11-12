@@ -21,12 +21,12 @@ def build_query(categories: List[str], keywords: List[str], intersect: bool=Fals
         for kw in keywords:
             # quote the keyword to keep phrases together
             kw = kw.replace('"', '\\"')
-            kw = f'(ti:"{kwq}" OR abs:"{kwq}")'
+            kw = f'(ti:"{kw}" OR abs:"{kw}")'
             kws.append(kw)
         if intersect:
-            kws_q = " AND ".join(kw_q)
+            kws_q = " AND ".join(kws)
         else:
-            kws_q = " OR ".join(kw_q)
+            kws_q = " OR ".join(kws)
         return f"({cat_q}) AND ({kws_q})"
     else:
         return f"({cat_q})"
