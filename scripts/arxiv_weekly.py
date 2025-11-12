@@ -38,8 +38,8 @@ def main():
 
     categories = getenv_list("ARXIV_CATEGORIES", default_categories)
     keywords = [k.strip() for k in getenv_list("ARXIV_KEYWORDS", default_keywords)]
-    days = int(os.getenv("ARXIV_DAYS", "7"))
-    max_results = int(os.getenv("MAX_RESULTS", "200"))
+    days = int(os.getenv("ARXIV_DAYS", "14"))
+    max_results = int(os.getenv("MAX_RESULTS", "150"))
     include_abstracts = os.getenv("INCLUDE_ABSTRACTS", "false").lower() == "true"
     intersect_keywords = os.getenv("INTERSECT_KW", "false").lower() == "true"
 
