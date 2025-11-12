@@ -98,7 +98,7 @@ def main():
     ]
 
     if not matches:
-        print("\n".join(header + ["No matching papers found this week."]))
+        print("\n".join(header + [f"No matching papers found these last {days} days."]))
         return
 
     lines = header + [f"Found {len(matches)} paper(s):", ""]
