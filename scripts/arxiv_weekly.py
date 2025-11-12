@@ -32,14 +32,13 @@ def build_query(categories: List[str], keywords: List[str], intersect: bool=Fals
         return f"({cat_q})"
 
 def main():
-    # default_categories = ["cs.LG", "stat.ML", "cs.AI", "cs.CL", "cs.CV"]
-    default_categories = ["cs.LG"]
+    default_categories = ["cs.LG"] #"stat.ML", "cs.AI", 
     default_keywords = ["federated learning", "time series"]
 
     categories = getenv_list("ARXIV_CATEGORIES", default_categories)
     keywords = [k.strip() for k in getenv_list("ARXIV_KEYWORDS", default_keywords)]
-    days = int(os.getenv("ARXIV_DAYS", "14"))
-    max_results = int(os.getenv("MAX_RESULTS", "150"))
+    days = int(os.getenv("ARXIV_DAYS", "3"))
+    max_results = int(os.getenv("MAX_RESULTS", "500"))
     include_abstracts = os.getenv("INCLUDE_ABSTRACTS", "false").lower() == "true"
     intersect_keywords = os.getenv("INTERSECT_KW", "false").lower() == "true"
 
