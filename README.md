@@ -38,8 +38,8 @@ Edit `.github/workflows/arxiv-weekly.yml` to change defaults:
 |-----------|----------|-------------|
 | `ARXIV_CATEGORIES` | `cs.LG` | ArXiv categories |
 | `ARXIV_KEYWORDS` | `federated learning,time series` | Keywords in title/abstract |
-| `ARXIV_DAYS` | `14` | Look-back window |
-| `MAX_RESULTS` | `150` | API fetch limit |
+| `ARXIV_DAYS` | `3` | Look-back window |
+| `MAX_RESULTS` | `500` | API fetch limit |
 | `INCLUDE_ABSTRACTS` | `false` | Add 1-line abstracts |
 | `INTERSECT_KW` | `false` | Must include all keywords |
 
