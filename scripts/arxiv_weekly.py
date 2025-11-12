@@ -13,23 +13,27 @@ def getenv_list(name: str, default: List[str]) -> List[str]:
     raw = os.getenv(name, "")
     return [s.strip() for s in raw.split(",") if s.strip()] if raw.strip() else default
 
-def build_query(categories: List[str], keywords: List[str]) -> str:
+def build_query(categories: List[str], keywords: List[str], intersect: bool=False) -> str:
     # (cat:cs.LG OR cat:stat.ML ...) AND ((ti:"..." OR abs:"...") OR ...)
     cat_q = " OR ".join([f"cat:{c}" for c in categories])
     if keywords:
-        kw_terms = []
+        kws = []
         for kw in keywords:
             # quote the keyword to keep phrases together
-            kwq = kw.replace('"', '\\"')
-            kw_terms.append(f'ti:"{kwq}"')
-            kw_terms.append(f'abs:"{kwq}"')
-        kw_q = " OR ".join(kw_terms)
-        return f"({cat_q}) AND ({kw_q})"
+            kw = kw.replace('"', '\\"')
+            kw = f'(ti:"{kwq}" OR abs:"{kwq}")'
+            kws.append(kw)
+        if intersect:
+            kws_q = " AND ".join(kw_q)
+        else:
+            kws_q = " OR ".join(kw_q)
+        return f"({cat_q}) AND ({kws_q})"
     else:
         return f"({cat_q})"
 
 def main():
-    default_categories = ["cs.LG", "stat.ML", "cs.AI", "cs.CL", "cs.CV"]
+    # default_categories = ["cs.LG", "stat.ML", "cs.AI", "cs.CL", "cs.CV"]
+    default_categories = ["cs.LG"]
     default_keywords = ["federated learning", "time series"]
 
     categories = getenv_list("ARXIV_CATEGORIES", default_categories)
@@ -37,6 +41,7 @@ def main():
     days = int(os.getenv("ARXIV_DAYS", "7"))
     max_results = int(os.getenv("MAX_RESULTS", "200"))
     include_abstracts = os.getenv("INCLUDE_ABSTRACTS", "false").lower() == "true"
+    intersect_keywords = os.getenv("INTERSECT_KW", "false").lower() == "true"
 
     # polite client config
     delay = float(os.getenv("ARXIV_DELAY", "3.2"))      # seconds between requests
@@ -45,7 +50,7 @@ def main():
 
     since = datetime.now(timezone.utc) - timedelta(days=days)
 
-    query = build_query(categories, [k.lower() for k in keywords])
+    query = build_query(categories, [k.lower() for k in keywords]; intersect_keywords)
 
     search = arxiv.Search(
         query=query,
