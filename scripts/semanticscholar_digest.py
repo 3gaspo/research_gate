@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, sys, time, textwrap
+import os, sys, time, textwrap, random
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
@@ -20,28 +20,40 @@ def normalize_kw_list(keywords: List[str]) -> List[str]:
 
 
 def text_has_keywords(text: str, keywords: List[str], intersect: bool) -> bool:
-    """Check if text contains keywords per intersect flag."""
     t = (text or "").lower()
     if not keywords:
         return True
-    if intersect:
-        return all(kw in t for kw in keywords)
-    else:
-        return any(kw in t for kw in keywords)
+    return all(kw in t for kw in keywords) if intersect else any(kw in t for kw in keywords)
 
 
 def build_free_text_query(keywords: List[str], fields_of_study: List[str]) -> str:
-    """
-    Build a Semantic Scholar free-text query.
-    - Keywords are quoted if multi-word; joined with OR (broad search for recall).
-    - fields_of_study tokens appended to nudge relevance (actual filtering is done locally).
-    """
     parts = []
     for kw in keywords:
         parts.append(f'"{kw}"' if " " in kw else kw)
     if fields_of_study:
         parts += fields_of_study
     return " OR ".join(parts) if parts else "machine learning"
+
+
+def _request_with_backoff(url: str, headers: dict, params: dict, max_retries: int, base_sleep: float):
+    """GET with exponential backoff that respects Retry-After on 429."""
+    attempt = 0
+    while True:
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        if resp.status_code != 429:
+            resp.raise_for_status()
+            return resp
+        # 429: rate limited
+        attempt += 1
+        if attempt > max_retries:
+            resp.raise_for_status()  # will raise HTTPError 429
+        retry_after = resp.headers.get("Retry-After")
+        if retry_after and retry_after.isdigit():
+            sleep_s = int(retry_after)
+        else:
+            # exponential backoff with jitter
+            sleep_s = base_sleep * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+        time.sleep(sleep_s)
 
 
 def fetch_semantic_scholar(
@@ -53,6 +65,8 @@ def fetch_semantic_scholar(
     api_key: Optional[str],
     intersect: bool,
     fields_of_study: List[str],
+    max_retries: int = 4,
+    base_sleep: float = 1.5,
 ):
     base = "https://api.semanticscholar.org/graph/v1/paper/search"
     headers = {"Accept": "application/json"}
@@ -65,18 +79,27 @@ def fetch_semantic_scholar(
     results = []
     offset = 0
     remaining = max_results
+    current_page_size = max(10, min(page_size, 100))
 
     while remaining > 0:
-        limit = min(page_size, remaining)
+        limit = min(current_page_size, remaining)
         params = {"query": query, "fields": fields, "limit": str(limit), "offset": str(offset)}
-        r = requests.get(base, headers=headers, params=params, timeout=30)
-        r.raise_for_status()
+
+        try:
+            r = _request_with_backoff(base, headers, params, max_retries=max_retries, base_sleep=base_sleep)
+        except requests.HTTPError as e:
+            # If we still get 429 after retries, halve the page size and try once more loop iteration
+            if e.response is not None and e.response.status_code == 429 and current_page_size > 10:
+                current_page_size = max(10, current_page_size // 2)
+                continue
+            raise
+
         data = r.json().get("data", [])
         if not data:
             break
 
+        added = 0
         for p in data:
-            # Date filter
             pubdate = p.get("publicationDate")
             year = p.get("year")
             keep = False
@@ -97,16 +120,12 @@ def fetch_semantic_scholar(
             abstract = p.get("abstract") or ""
             title_ok = text_has_keywords(title, keywords, intersect)
             abstract_ok = text_has_keywords(abstract, keywords, intersect)
-
-            # Final keyword pass: match if either title or abstract satisfies condition
             if not (title_ok or abstract_ok):
                 continue
 
-            # Optional fields-of-study filter (local)
             fos = p.get("fieldsOfStudy") or []
             if fields_of_study:
                 if not any(fs.lower() in [f.lower() for f in fos] for fs in fields_of_study):
-                    # If none of requested FOS appear, skip
                     continue
 
             url = p.get("url") or ""
@@ -126,12 +145,16 @@ def fetch_semantic_scholar(
                 "cat": ", ".join(fos) if fos else "N/A",
                 "snippet": snippet,
             })
+            added += 1
+            if len(results) >= max_results:
+                break
 
-        got = len(data)
-        if got == 0:
+        if added == 0 and len(data) == 0:
             break
-        remaining -= got
-        offset += got
+
+        offset += len(data)
+        remaining = max_results - len(results)
+
         if delay:
             time.sleep(delay)
 
@@ -139,16 +162,16 @@ def fetch_semantic_scholar(
 
 
 def main():
-    # Defaults
     default_keywords = ["federated learning", "time series"]
     default_fos = []  # e.g., ["Computer Science", "Mathematics"]
 
     keywords = normalize_kw_list(getenv_list("S2_KEYWORDS", default_keywords))
     intersect = os.getenv("S2_INTERSECT_KW", "false").lower() == "true"
     days = int(os.getenv("S2_DAYS", "3"))
-    max_results = int(os.getenv("S2_MAX_RESULTS", "200"))
-    page_size = int(os.getenv("S2_PAGE_SIZE", "100"))
-    delay = float(os.getenv("S2_DELAY", "1.0"))
+    # Safer defaults to avoid 429s:
+    max_results = int(os.getenv("S2_MAX_RESULTS", "100"))
+    page_size = int(os.getenv("S2_PAGE_SIZE", "50"))
+    delay = float(os.getenv("S2_DELAY", "1.5"))
     fields_of_study = getenv_list("S2_FIELDS", default_fos)
 
     include_abstracts = os.getenv("INCLUDE_ABSTRACTS", "false").lower() == "true"
