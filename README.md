@@ -1,4 +1,4 @@
-# 📨 ArXiv Weekly Digest
+# 📨 ArXiv weekly digest
 
 Automatically fetch and email the latest arXiv submissions in a specified field.
 
