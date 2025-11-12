@@ -89,44 +89,63 @@ def fetch_semantic_scholar(
     offset = 0
     current_page_size = max(10, min(page_size, 100))
 
+    # Guards to avoid deep offsets that can trigger 400s on some queries
+    hard_max_offset = int(os.getenv("S2_MAX_OFFSET", "400"))
+    # If we keep seeing old results, bail early
+    stale_rows_seen = 0
+    stale_rows_threshold = max(100, current_page_size * 3)
+
     while len(results) < max_results:
+        if offset >= hard_max_offset:
+            # Stop before hitting problematic offsets
+            break
+
         limit = min(current_page_size, max_results - len(results))
         params = {"query": query, "fields": fields, "limit": str(limit), "offset": str(offset)}
 
         try:
             r = _request_with_backoff(base, headers, params, max_retries=max_retries, base_sleep=base_sleep)
         except requests.HTTPError as e:
-            if e.response is not None and e.response.status_code == 429 and current_page_size > 10:
+            # If we hit 400 or 429 repeatedly, reduce page size and try next page; otherwise stop
+            status = e.response.status_code if e.response is not None else None
+            if status in (400, 429) and current_page_size > 10:
                 current_page_size = max(10, current_page_size // 2)
+                # skip ahead conservatively
+                offset += current_page_size
                 continue
-            raise
+            # give up gracefully
+            break
 
-        data = r.json().get("data", [])
+        payload = r.json()
+        data = payload.get("data", [])
+        total = payload.get("total")  # may be absent
+
         if not data:
             break
 
+        added_this_page = 0
         for p in data:
-            # ---- strict date filter ----
             pubdate = p.get("publicationDate")
             year = p.get("year")
+
             keep = False
             if pubdate:
                 dt = _parse_pubdate_utc(pubdate)
                 keep = (dt is not None) and (dt.date() >= since_dt.date())
             elif year:
-                # coarse fallback if only year is known
                 try:
                     keep = int(year) >= since_dt.year
                 except Exception:
                     keep = False
             else:
                 keep = False
+
             if not keep:
+                stale_rows_seen += 1
                 continue
 
             title = (p.get("title") or "").strip()
             abstract = p.get("abstract") or ""
-            # keyword logic: match if either title OR abstract satisfies intersect flag
             if not (text_has_keywords(title, keywords, intersect) or
                     text_has_keywords(abstract, keywords, intersect)):
                 continue
@@ -142,7 +161,6 @@ def fetch_semantic_scholar(
             if not url and "ArXiv" in ext:
                 url = f"https://arxiv.org/abs/{ext['ArXiv']}"
 
-            # Clean date string for output
             date_str = pubdate.split("T")[0] if pubdate else (str(year) if year else "N/A")
 
             snippet = ""
@@ -157,11 +175,21 @@ def fetch_semantic_scholar(
                 "cat": ", ".join(fos) if fos else "N/A",
                 "snippet": snippet,
             })
-
+            added_this_page += 1
             if len(results) >= max_results:
                 break
 
+        # Pagination bookkeeping
         offset += len(data)
+
+        # Stop early if API says we've reached the end
+        if total is not None and offset >= int(total):
+            break
+
+        # If we’re only seeing stale/too-old rows for a while, stop digging
+        if stale_rows_seen >= stale_rows_threshold and len(results) == 0:
+            break
+
         if delay:
             time.sleep(delay)
 
@@ -178,7 +206,7 @@ def main():
     intersect = os.getenv("S2_INTERSECT_KW", "false").lower() == "true"
     days = int(os.getenv("S2_DAYS", "3"))
 
-    # Safer defaults to avoid 429s
+    # Safer defaults to avoid 429/400
     max_results = int(os.getenv("S2_MAX_RESULTS", "100"))
     page_size = int(os.getenv("S2_PAGE_SIZE", "50"))
     delay = float(os.getenv("S2_DELAY", "1.5"))
