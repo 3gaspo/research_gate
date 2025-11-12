@@ -7,16 +7,19 @@ on:
   workflow_dispatch:
     inputs:
       categories:
-        description: "Comma-separated arXiv categories (default: cs.LG,stat.ML,cs.AI)"
+        description: "Comma-separated arXiv categories (default: cs.LG)"
         required: false
       keywords:
         description: "Comma-separated keywords (default: federated learning,time series)"
         required: false
       days:
-        description: "Lookback window in days (default: 7)"
+        description: "Lookback window in days (default: 14)"
         required: false
       include_abstracts:
         description: "Include 1-line abstract snippets (true/false)"
+        required: false
+      intersect_keywords:
+        description: "AND condition on keywords (true/false)"
         required: false
       max_results:
         description: "Max results before filtering (default: 150)"
@@ -51,10 +54,11 @@ jobs:
       - name: Run arXiv search
         env:
           # Defaults (can be overridden via workflow_dispatch inputs)
-          ARXIV_CATEGORIES:  ${{ inputs.categories != '' && inputs.categories || 'cs.LG,stat.ML,cs.AI' }}
+          ARXIV_CATEGORIES:  ${{ inputs.categories != '' && inputs.categories || 'cs.LG' }}
           ARXIV_KEYWORDS:    ${{ inputs.keywords   != '' && inputs.keywords   || 'federated learning,time series' }}
-          ARXIV_DAYS:        ${{ inputs.days       != '' && inputs.days       || '7' }}
+          ARXIV_DAYS:        ${{ inputs.days       != '' && inputs.days       || '14' }}
           INCLUDE_ABSTRACTS: ${{ inputs.include_abstracts != '' && inputs.include_abstracts || 'false' }}
+          INTERSECT_KW:      ${{ inputs.intersect_keywords != '' && inputs.intersect_keywords || 'false' }}
           MAX_RESULTS:       ${{ inputs.max_results != '' && inputs.max_results || '150' }}
           ARXIV_DELAY:       ${{ inputs.delay != '' && inputs.delay || '3.2' }}
           ARXIV_PAGE_SIZE:   ${{ inputs.page_size != '' && inputs.page_size || '100' }}
